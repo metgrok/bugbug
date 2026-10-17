@@ -1,4 +1,4 @@
-"""Bugzilla MCP + read-only Phabricator broker.
+\"\"\"Bugzilla MCP + read-only Phabricator broker.
 
 Sidecar container that holds the privileged API keys and serves them over HTTP
 to the agent process (a sibling container in the same Cloud Run Job task), which
@@ -14,7 +14,8 @@ credentials:
   (``phabricator_proxy``) — the broker looks enough like a Phabricator instance
   for a Conduit client to talk to it, but only for an allow-listed set of read
   methods, and it swaps in the real key so the caller never holds one.
-"""
+- GitHub: the read-only `github` MCP tools over `/github/mcp`.
+\"\"\"
 
 import logging
 from contextlib import asynccontextmanager
@@ -23,9 +24,11 @@ import bugsy
 import uvicorn
 from agent_tools import bugzilla
 from agent_tools import phabricator as phabricator_tools
+from agent_tools import github as github_tools
 from agent_tools.bugzilla import BugzillaContext
 from agent_tools.claude_sdk import build_sdk_server
 from agent_tools.phabricator import PhabricatorContext
+from agent_tools.github import GitHubContext
 from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
 from phabricator_client import PhabricatorClient, PhabricatorSettings
 from phabricator_proxy import create_app as conduit_proxy
@@ -40,6 +43,7 @@ class BrokerInputs(BaseSettings):
     bugzilla_api_url: str
     bugzilla_api_key: str
     phabricator: PhabricatorSettings
+    github_token: str
     host: str = "0.0.0.0"
     port: int = 8765
 
@@ -51,7 +55,7 @@ class BrokerInputs(BaseSettings):
 
 
 def _mcp_endpoint(manager: StreamableHTTPSessionManager):
-    """An ASGI app serving one MCP server over streamable HTTP."""
+    \"\"\"An ASGI app serving one MCP server over streamable HTTP.\"\"\"
 
     async def handler(scope, receive, send):
         await manager.handle_request(scope, receive, send)
@@ -80,12 +84,19 @@ def build_app(inputs: BrokerInputs) -> Starlette:
         app=phabricator_config["instance"], stateless=True
     )
 
+    github_config = build_sdk_server(
+        "github", GitHubContext(token=inputs.github_token), github_tools.TOOLS
+    )
+    github_manager = StreamableHTTPSessionManager(
+        app=github_config["instance"], stateless=True
+    )
+
     @asynccontextmanager
     async def lifespan(app):
-        async with bugzilla_manager.run(), phabricator_manager.run():
+        async with bugzilla_manager.run(), phabricator_manager.run(), github_manager.run():
             log.info(
                 "broker ready on %s:%d (bugzilla + phabricator read-only, "
-                "phabricator conduit proxy)",
+                "phabricator conduit proxy, github read-only)",
                 inputs.host,
                 inputs.port,
             )
@@ -96,6 +107,7 @@ def build_app(inputs: BrokerInputs) -> Starlette:
             Mount("/bugzilla/mcp", app=_mcp_endpoint(bugzilla_manager)),
             Mount("/phabricator/mcp", app=_mcp_endpoint(phabricator_manager)),
             Mount("/phabricator/api", app=conduit_proxy(phabricator_client)),
+            Mount("/github/mcp", app=_mcp_endpoint(github_manager)),
         ],
         lifespan=lifespan,
     )

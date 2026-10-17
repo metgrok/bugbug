@@ -17,6 +17,15 @@ PHABRICATOR_READ_TOOLS = [
     "mcp__phabricator__get_revision_diff",
 ]
 
+# GitHub MCP tool names as exposed to the agent (mcp__<server>__<tool>).
+GITHUB_READ_TOOLS = [
+    "mcp__github__get_issue",
+    "mcp__github__get_pull_request",
+    "mcp__github__list_pull_requests",
+    "mcp__github__get_pull_request_files",
+    "mcp__github__get_issue_comments",
+]
+
 # Action types that the agent may record in any bug-fix workflow.
 BUG_FIX_ACTIONS = [
     "bugzilla.update_bug",
