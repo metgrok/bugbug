@@ -53,4 +53,6 @@ def get_read_tools(platform):
         return GITHUB_READ_TOOLS
     elif platform == "phabricator":
         return PHABRICATOR_READ_TOOLS
+    elif platform == "bugzilla":
+        return BUGZILLA_READ_TOOLS
     return []
